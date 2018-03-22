@@ -1,4 +1,3 @@
-from gensim.models import word2vec as Word2Vec
 import tensorflow as tf
 import pandas as pd
 import numpy as np
@@ -24,31 +23,34 @@ def clean_sequence_to_words(sequence):
             sequence.pop(i)
     return sequence
 
-def load_data(data_dir="/disk2/datasets/snli/snli_1.0/", word2vec_path="/disk2/datasets/word2vec/GoogleNews-vectors-negative300.bin"):
+def load_data(data_dir="../data/snli_1.0/", embeddings_path="../data/glove.6B.50d.txt"):
 
-    print "\nLoading word2vec:"
-    word2vec = {}
-    word2vec = Word2Vec.Word2Vec.load_word2vec_format(word2vec_path, binary=True)
-    print "word2vec: done"
+    print("\nLoading embeddings:")
+    embeddings = {}
+    with open(embeddings_path, "r", encoding="utf8") as glove:
+        for line in glove:
+            name, vector = tuple(line.split(" ", 1))
+            embeddings[name] = np.fromstring(vector, sep=" ")
+    print("embeddings: done")
 
     dataset = {}
-    print "\nLoading dataset:"
+    print("\nLoading dataset:")
     for type_set in ["train", "dev", "test"]: 
-        df = pd.read_csv(os.path.join(data_dir, "snli_1.0_{}.txt".format(type_set)), delimiter="\t")
+        df = pd.read_csv(data_dir+'snli_1.0/snli_1.0_'+type_set+'.txt', delimiter="\t")
         dataset[type_set] = {"premises": df[["sentence1"]].values, "hypothesis": df[["sentence2"]].values, "targets": df[["gold_label"]].values}
 
-    tokenized_dataset = simple_preprocess(dataset=dataset, word2vec=word2vec)
-    print "dataset: done\n"
-    return word2vec, tokenized_dataset
+    tokenized_dataset = simple_preprocess(dataset=dataset, embeddings=embeddings)
+    print("dataset: done\n")
+    return embeddings, tokenized_dataset
 
-def simple_preprocess(dataset, word2vec):
+def simple_preprocess(dataset, embeddings):
     tokenized_dataset = dict((type_set, {"premises": [], "hypothesis": [], "targets": []}) for type_set in dataset)
-    print "tokenization:"
+    print("tokenization:")
     for type_set in dataset:
-        print "type_set:", type_set
+        print("type_set:", type_set)
         map_targets = {"neutral": 0, "entailment": 1, "contradiction": 2}
         num_ids = len(dataset[type_set]["targets"])
-        print "num_ids", num_ids
+        print("num_ids", num_ids)
         for i in range(num_ids):
             try:
                 premises_tokens = [word for word in clean_sequence_to_words(dataset[type_set]["premises"][i][0])]
@@ -62,8 +64,8 @@ def simple_preprocess(dataset, word2vec):
                 tokenized_dataset[type_set]["targets"].append(target)
             sys.stdout.write("\rid: {}/{}      ".format(i + 1, num_ids))
             sys.stdout.flush()
-        print ""
-    print "tokenization: done"
+        print("")
+    print("tokenization: done")
     return tokenized_dataset
 
 
@@ -72,8 +74,8 @@ from network import RNN, LSTMCell, AttentionLSTMCell
 from batcher import Batcher
 
 
-def train(word2vec, dataset, parameters):
-    modeldir = os.path.join(parameters["runs_dir"], parameters["model_name"])
+def train(embeddings, dataset, parameters):
+    modeldir = parameters["runs_dir"] + '/' + parameters["model_name"]
     if not os.path.exists(modeldir):
         os.mkdir(modeldir)
     logdir = os.path.join(modeldir, "log")
@@ -121,22 +123,22 @@ def train(word2vec, dataset, parameters):
 
         global_loss = loss + parameters["weight_decay"] * weight_decay
 
-        train_summary_op = tf.merge_summary([loss_summary, accuracy_summary])
-        train_summary_writer = tf.train.SummaryWriter(logdir_train, sess.graph)
-        test_summary_op = tf.merge_summary([loss_summary, accuracy_summary])
-        test_summary_writer = tf.train.SummaryWriter(logdir_test)
+        train_summary_op = tf.summary.merge([loss_summary, accuracy_summary])
+        train_summary_writer = tf.summary.FileWriter(logdir_train, sess.graph)
+        test_summary_op = tf.summary.merge([loss_summary, accuracy_summary])
+        test_summary_writer = tf.summary.FileWriter(logdir_test)
         
         saver = tf.train.Saver(max_to_keep=10)
-        summary_writer = tf.train.SummaryWriter(logdir)
+        summary_writer = tf.summary.FileWriter(logdir)
         tf.train.write_graph(sess.graph_def, modeldir, "graph.pb", as_text=False)
-        loader = tf.train.Saver(tf.all_variables())
+        loader = tf.train.Saver(tf.global_variables())
 
         optimizer = tf.train.AdamOptimizer(learning_rate=parameters["learning_rate"], name="ADAM", beta1=0.9, beta2=0.999)
         train_op = optimizer.minimize(global_loss)
 
-        sess.run(tf.initialize_all_variables())
+        sess.run(tf.global_variables_initializer())
         
-        batcher = Batcher(word2vec=word2vec)
+        batcher = Batcher(embeddings=embeddings)
         train_batches = batcher.batch_generator(dataset=dataset["train"], num_epochs=parameters["num_epochs"], batch_size=parameters["batch_size"]["train"], sequence_length=parameters["sequence_length"])
         num_step_by_epoch = int(math.ceil(len(dataset["train"]["targets"]) / parameters["batch_size"]["train"]))
         for train_step, (train_batch, epoch) in enumerate(train_batches):
@@ -163,11 +165,11 @@ def train(word2vec, dataset, parameters):
                                 }
 
                     summary_str, test_loss, test_accuracy = sess.run([test_summary_op, loss, accuracy], feed_dict=feed_dict)
-                    print"\nTEST | loss={0:.2f}, accuracy={1:.2f}%   ".format(test_loss, 100. * test_accuracy)
-                    print ""
+                    print("\nTEST | loss={0:.2f}, accuracy={1:.2f}%   ".format(test_loss, 100. * test_accuracy))
+                    print("")
                     test_summary_writer.add_summary(summary_str, train_step)
                     break
             if train_step % 5000 == 0:
                 saver.save(sess, save_path=savepath, global_step=train_step)
-        print ""
+        print("")
 

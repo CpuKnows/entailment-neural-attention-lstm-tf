@@ -2,14 +2,14 @@ import numpy as np
 import copy
 
 class Batcher(object):
-    def __init__(self, word2vec):
+    def __init__(self, embeddings):
         self._premises = []
         self._hypothesis = []
         self._targets = []
-        self._word2vec = word2vec
-        self._embedding_dim = len(self._word2vec["beer"])
+        self._embeddings = embeddings
+        self._embedding_dim = len(next(iter(self._embeddings.values())))
         self._out_of_voc_embedding = (2 * np.random.rand(self._embedding_dim) - 1) / 20
-        self._delimiter = self._word2vec["_"]
+        self._delimiter = self._embeddings["_"]
 
     def batch_generator(self, dataset, num_epochs, batch_size, sequence_length):
         ids = range(len(dataset["targets"]))
@@ -39,7 +39,7 @@ class Batcher(object):
             p_seq = p_seq[start_index: (start_index + sequence_length - int(is_delimiter))]
         for word in p_seq:
             try:
-                embedding = self._word2vec[word]
+                embedding = self._embeddings[word]
             except KeyError:
                 embedding = self._out_of_voc_embedding
             finally:

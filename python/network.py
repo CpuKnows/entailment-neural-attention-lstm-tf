@@ -61,11 +61,11 @@ class LSTMCell(TensorFlowTrainable):
         self.c = [self.get_biases(dim_out=self._num_units, name="c", trainable=False)]
 
     def initialize_something(self, input):
-        self.batch_size_vector = 1 + 0 * tf.expand_dims(tf.unpack(tf.transpose(input, [1, 0]))[0], 0)
+        self.batch_size_vector = 1 + 0 * tf.expand_dims(tf.unstack(tf.transpose(input, [1, 0]))[0], 0)
         self.h = [self.get_biases(dim_out=self._num_units, name="h", trainable=False) * self.batch_size_vector]
 
     def process(self, input, **kwargs):
-        H = tf.concat(0, [tf.transpose(input, perm=[1, 0]), self.h[-1]])
+        H = tf.concat([tf.transpose(input, perm=[1, 0]), self.h[-1]], 0)
         i = tf.sigmoid(x=tf.add(tf.matmul(self.w_i, H), self.b_i))
         f = tf.sigmoid(x=tf.add(tf.matmul(self.w_f, H), self.b_f))
         o = tf.sigmoid(x=tf.add(tf.matmul(self.w_o, H), self.b_o))
@@ -85,7 +85,7 @@ class AttentionLSTMCell(LSTMCell):
         # warm-up
         self.warm_hiddens = hiddens
         self.L = len(self.warm_hiddens)
-        self.Y = tf.expand_dims(tf.transpose(tf.pack(self.warm_hiddens), [2, 1, 0]), 3)
+        self.Y = tf.expand_dims(tf.transpose(tf.stack(self.warm_hiddens), [2, 1, 0]), 3)
         self.c = [states[-1]]
 
         # weights
@@ -116,7 +116,7 @@ class AttentionLSTMCell(LSTMCell):
             second_term = tf.expand_dims(tf.transpose(tf.tile(tf.expand_dims(tf.matmul(self.w_h, self.h[-1]) + tf.matmul(self.w_r, self.r[-1]), [2]), [1, 1, self.L]), [1, 0, 2]), 3)
             M = tf.tanh(first_term + second_term)
             alpha = tf.expand_dims(tf.nn.softmax(tf.squeeze(tf.nn.conv2d(input=M, filter=self.w, strides=[1, 1, 1, 1], padding="VALID"), [1, 3])), 2)
-            r = tf.transpose(tf.squeeze(tf.batch_matmul(tf.squeeze(self.Y, [3]), alpha), [2]), [1, 0]) + tf.tanh(tf.matmul(self.w_t, self.r[-1]))
+            r = tf.transpose(tf.squeeze(tf.matmul(tf.squeeze(self.Y, [3]), alpha), [2]), [1, 0]) + tf.tanh(tf.matmul(self.w_t, self.r[-1]))
             self.r.append(r)
 
     @property
@@ -144,7 +144,7 @@ class RNN(TensorFlowTrainable):
         noisy_sequence = tf.expand_dims(tf.transpose(noisy_sequence, [1, 0, 2]), 3)
         projected_sequence = tf.transpose(tf.squeeze(tf.nn.conv2d(input=noisy_sequence, filter=self._projecter, strides=[1, 1, 1, 1], padding="VALID"), [2]), [1, 0, 2])
         
-        list_sequence = tf.unpack(projected_sequence)
+        list_sequence = tf.unstack(projected_sequence)
         self._cell.initialize_something(input=list_sequence[0])
         for i, input in enumerate(list_sequence):
             self._cell.process(input=input, delimiter=i==0)
@@ -162,12 +162,12 @@ class RNN(TensorFlowTrainable):
             raise Exception("You shouldn't have been there.")
         else:
             with tf.name_scope("loss") as scope:
-                loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(self.get_predictions(), targets))
-                loss_summary = tf.scalar_summary("loss", loss)
+                loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=targets, logits=self.get_predictions()))
+                loss_summary = tf.summary.scalar("loss", loss)
             with tf.name_scope("accuracy") as scope:
                 predictions = tf.to_int32(tf.argmax(self.predictions, 1))
                 correct_label = tf.to_int32(targets)
                 correct_predictions = tf.equal(predictions, correct_label)
                 accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"))
-                accuracy_summary = tf.scalar_summary("accuracy", accuracy)
+                accuracy_summary = tf.summary.scalar("accuracy", accuracy)
             return loss, loss_summary, accuracy, accuracy_summary
