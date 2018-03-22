@@ -4,6 +4,7 @@ import numpy as np
 import os
 import sys
 import math
+import json
 from network import TensorFlowTrainable
 
 
@@ -23,8 +24,39 @@ def clean_sequence_to_words(sequence):
             sequence.pop(i)
     return sequence
 
-def load_data(data_dir="../data/snli_1.0/", embeddings_path="../data/glove.6B.50d.txt"):
+def read_multinli_data(filename, size=-1):
+    label_category = {
+        'neutral': 0,
+        'entailment': 1,
+        'contradiction': 2
+    }
+    sentence1 = []
+    sentence2 = []
+    labels = []
 
+    with open(filename, 'r', encoding="utf8") as f:
+        i = 0
+        not_found = 0
+        for line in f:
+            row = json.loads(line)
+            if size == -1 or i < size:
+                label = row['gold_label'].strip()
+                if label in label_category:
+                    sentence1.append(row['sentence1'].strip())
+                    sentence2.append(row['sentence2'].strip())
+
+                    labels.append(label_category[label])
+                    i += 1
+                else:
+                    not_found += 1
+            else:
+                break;
+        if not_found > 0:
+            print('Label not recognized %d' % not_found)
+                
+    return (sentence1, sentence2, labels)
+
+def load_data(data_files, embeddings_path):
     print("\nLoading embeddings:")
     embeddings = {}
     with open(embeddings_path, "r", encoding="utf8") as glove:
@@ -35,9 +67,9 @@ def load_data(data_dir="../data/snli_1.0/", embeddings_path="../data/glove.6B.50
 
     dataset = {}
     print("\nLoading dataset:")
-    for type_set in ["train", "dev", "test"]: 
-        df = pd.read_csv(data_dir+'snli_1.0/snli_1.0_'+type_set+'.txt', delimiter="\t")
-        dataset[type_set] = {"premises": df[["sentence1"]].values, "hypothesis": df[["sentence2"]].values, "targets": df[["gold_label"]].values}
+    for type_set, data_file in data_files.items():
+        (p, h, t) = read_multinli_data(data_file)
+        dataset[type_set] = {"premises": p, "hypothesis": h, "targets": t}
 
     tokenized_dataset = simple_preprocess(dataset=dataset, embeddings=embeddings)
     print("dataset: done\n")
@@ -53,16 +85,16 @@ def simple_preprocess(dataset, embeddings):
         print("num_ids", num_ids)
         for i in range(num_ids):
             try:
-                premises_tokens = [word for word in clean_sequence_to_words(dataset[type_set]["premises"][i][0])]
-                hypothesis_tokens = [word for word in clean_sequence_to_words(dataset[type_set]["hypothesis"][i][0])]
-                target = map_targets[dataset[type_set]["targets"][i][0]]
+                premises_tokens = [word for word in clean_sequence_to_words(dataset[type_set]["premises"][i])]
+                hypothesis_tokens = [word for word in clean_sequence_to_words(dataset[type_set]["hypothesis"][i])]
+                target = dataset[type_set]["targets"][i]
             except:
                 pass
             else:
                 tokenized_dataset[type_set]["premises"].append(premises_tokens)
                 tokenized_dataset[type_set]["hypothesis"].append(hypothesis_tokens)
                 tokenized_dataset[type_set]["targets"].append(target)
-            sys.stdout.write("\rid: {}/{}      ".format(i + 1, num_ids))
+            sys.stdout.write("\rid: {}/{}".format(i + 1, num_ids))
             sys.stdout.flush()
         print("")
     print("tokenization: done")

@@ -43,7 +43,9 @@ if __name__ == "__main__":
         print('{}: {}'.format(key, parameter))
 
     # MAIN
-    embeddings, dataset = load_data(data_dir=args.data_dir, embeddings_path=args.embeddings_path)
+    embeddings, dataset = load_data(data_files={'train': '../data/multinli/multinli_1.0_train.jsonl',
+                                                'test': '../data/multinli/multinli_1.0_dev_matched.jsonl'}, 
+                                    embeddings_path=args.embeddings_path)
 
     if args.train:
         train(embeddings=embeddings, dataset=dataset, parameters=parameters)

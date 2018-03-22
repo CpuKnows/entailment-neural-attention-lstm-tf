@@ -35,7 +35,7 @@ class Batcher(object):
         preprocessed = []
         diff_size = len(p_seq) - sequence_length + int(is_delimiter)
         if diff_size  > 0:
-            start_index = 0#np.random.randint(diff_size + 1)
+            start_index = 0
             p_seq = p_seq[start_index: (start_index + sequence_length - int(is_delimiter))]
         for word in p_seq:
             try:
